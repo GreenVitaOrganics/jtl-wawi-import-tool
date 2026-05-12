@@ -29,7 +29,7 @@ import config
 from modules.pdf_parser import parse_pdf, InvoiceItem
 from modules.knistermann_scraper import KnistermannScraper, ProductInfo
 from modules.blackleaf_scraper import BlackleafScraper
-from modules.price_calculator import calculate_prices, get_price_strategy, format_price_summary, PriceResult
+from modules.price_calculator import calculate_prices, calculate_ek_per_unit, get_price_strategy, format_price_summary, PriceResult
 from modules.jtl_exporter import JTLArticle, export_csv, print_summary
 
 # ── Logging ───────────────────────────────────────────────────────

@@ -132,6 +132,28 @@ def get_price_strategy(
     return prices
 
 
+def calculate_ek_per_unit(ek_ve: float, ve_size: int) -> float:
+    """
+    Berechnet den EK pro Einzelstück aus dem VE-Preis.
+
+    Args:
+        ek_ve:    EK netto für die gesamte VE (Verpackungseinheit)
+        ve_size:  Anzahl Einzelstücke in der VE (z.B. 6 bei Display mit 6 Stück)
+
+    Returns:
+        EK pro Einzelstück (netto), gerundet auf 4 Dezimalstellen.
+
+    Beispiele:
+        - JAYSAFE Display (VE=6):  22,98€ / 6 = 3,83€/Stück
+        - PURIZE 50er Packung (VE=1): 4,47€ / 1 = 4,47€/Packung
+        - ScreenUrin (VE=20): 130,00€ / 20 = 6,50€/Stück
+    """
+    if ve_size <= 0:
+        ve_size = 1
+        logger.warning("VE-Größe war ≤ 0, setze auf 1")
+    return round(ek_ve / ve_size, 4)
+
+
 def calculate_prices(
     ek_ve_preis: float,
     ve_menge: int,
@@ -142,7 +164,9 @@ def calculate_prices(
 
     Args:
         ek_ve_preis:     EK netto aus der Rechnung (= Preis für die gesamte VE)
-        ve_menge:        Anzahl Einzelstücke in der VE (z.B. 20 bei "20x 25ml")
+        ve_menge:        Anzahl Einzelstücke in der VE (z.B. 6 bei "6 Stück im Display")
+                         Für Produkte wie "50er Packung" ist ve_menge=1, da die Packung
+                         die Verkaufseinheit ist.
         blackleaf_preis: VK brutto von Blackleaf.de (None wenn nicht gefunden)
 
     Returns:
@@ -154,7 +178,7 @@ def calculate_prices(
         logger.warning("VE-Menge war ≤ 0, setze auf 1")
 
     # ── Schritt 1: EK-Einzelpreis ─────────────────────────────────
-    ek_einzelpreis = round(ek_ve_preis / ve_menge, 4)
+    ek_einzelpreis = calculate_ek_per_unit(ek_ve_preis, ve_menge)
 
     # ── Schritt 2: VK-Formel (EK × 2.5 × 1.19) ──────────────────
     vk_formel = round(ek_einzelpreis * config.MARKUP_FACTOR * config.MWST_RATE, 2)
@@ -225,6 +249,16 @@ if __name__ == "__main__":
     r = calculate_prices(ek_ve_preis=130.0, ve_menge=20, blackleaf_preis=18.90)
     print(f"CLU-003: EK/Stk = {r.ek_einzelpreis:.2f}€, VK = {r.vk_brutto:.2f}€ ({r.vk_methode})")
 
-    # Beispiel: PURIZE-112 – 35 € für 500er Packung, kein Blackleaf
-    r2 = calculate_prices(ek_ve_preis=35.0, ve_menge=500, blackleaf_preis=None)
-    print(f"PURIZE-112: EK/Stk = {r2.ek_einzelpreis:.4f}€, VK = {r2.vk_brutto:.2f}€ ({r2.vk_methode})")
+    # Beispiel: JAYSAFE Display (VE=6) – 22,98 € für 6 Stück im Display
+    r2 = calculate_prices(ek_ve_preis=22.98, ve_menge=6, blackleaf_preis=None)
+    print(f"JAYSAFE (VE=6): EK/Stk = {r2.ek_einzelpreis:.2f}€, VK = {r2.vk_brutto:.2f}€ ({r2.vk_methode})")
+
+    # Beispiel: PURIZE 50er Packung (VE=1) – 4,47 € pro Packung (keine Teilung!)
+    r3 = calculate_prices(ek_ve_preis=4.47, ve_menge=1, blackleaf_preis=None)
+    print(f"PURIZE 50er (VE=1): EK/Pckg = {r3.ek_einzelpreis:.2f}€, VK = {r3.vk_brutto:.2f}€ ({r3.vk_methode})")
+
+    # Direkte calculate_ek_per_unit Tests
+    print(f"\ncalculate_ek_per_unit Tests:")
+    print(f"  JAYSAFE:  22.98 / 6  = {calculate_ek_per_unit(22.98, 6):.2f}€")
+    print(f"  PURIZE:    4.47 / 1  = {calculate_ek_per_unit(4.47, 1):.2f}€")
+    print(f"  CLU-003: 130.00 / 20 = {calculate_ek_per_unit(130.0, 20):.2f}€")

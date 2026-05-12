@@ -154,26 +154,27 @@ def _lagermenge_from_ampel(ampel: str) -> Optional[int]:
 
 def print_summary(articles: List[JTLArticle]) -> None:
     """Gibt eine Zusammenfassung der exportierten Artikel aus."""
-    print(f"\n{'='*90}")
+    print(f"\n{'='*110}")
     print(f"  JTL Import Zusammenfassung – {len(articles)} Artikel")
-    print(f"{'='*90}")
-    print(f"  {'ArtNr':<20s} {'Name':<35s} {'EK/Stk':>8s} {'VK':>8s} {'Marge':>7s} {'Ampel':>6s} {'Bilder':>6s}")
-    print(f"  {'─'*20} {'─'*35} {'─'*8} {'─'*8} {'─'*7} {'─'*6} {'─'*6}")
+    print(f"{'='*110}")
+    print(f"  {'ArtNr':<20s} {'Name':<30s} {'VE':>4s} {'EK/VE':>8s} {'EK/Stk':>8s} {'VK':>8s} {'Marge':>7s} {'Ampel':>6s} {'Bilder':>6s}")
+    print(f"  {'─'*20} {'─'*30} {'─'*4} {'─'*8} {'─'*8} {'─'*8} {'─'*7} {'─'*6} {'─'*6}")
 
     total_ek = 0
     total_vk = 0
 
     for a in articles:
-        name = a.artikelname[:33] + ".." if len(a.artikelname) > 35 else a.artikelname
+        name = a.artikelname[:28] + ".." if len(a.artikelname) > 30 else a.artikelname
         ampel_icon = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}.get(a.lagerampel, "⚪")
         print(
-            f"  {a.artikelnummer:<20s} {name:<35s} "
-            f"{a.ek_netto:>8.2f} {a.vk_brutto:>8.2f} {a.marge_prozent:>6.1f}% "
+            f"  {a.artikelnummer:<20s} {name:<30s} "
+            f"{a.ve_menge:>4d} {a.ek_ve_preis:>8.2f} {a.ek_netto:>8.2f} "
+            f"{a.vk_brutto:>8.2f} {a.marge_prozent:>6.1f}% "
             f"{ampel_icon:>6s} {len(a.bild_urls):>6d}"
         )
         total_ek += a.ek_netto
         total_vk += a.vk_brutto
 
-    print(f"  {'─'*20} {'─'*35} {'─'*8} {'─'*8}")
-    print(f"  {'SUMME':<20s} {'':<35s} {total_ek:>8.2f} {total_vk:>8.2f}")
-    print(f"{'='*90}\n")
+    print(f"  {'─'*20} {'─'*30} {'─'*4} {'─'*8} {'─'*8} {'─'*8}")
+    print(f"  {'SUMME':<20s} {'':<30s} {'':>4s} {'':>8s} {total_ek:>8.2f} {total_vk:>8.2f}")
+    print(f"{'='*110}\n")

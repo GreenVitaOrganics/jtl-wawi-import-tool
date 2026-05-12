@@ -361,47 +361,99 @@ class KnistermannScraper:
         """
         Extrahiert VE-Menge und VE-Beschreibung aus verschiedenen Quellen.
         Gibt (ve_menge: int, ve_beschreibung: str) zurück.
+
+        WICHTIG: Unterscheidung zwischen tatsächlicher VE (Gebinde) und
+        Produktbeschreibung (z.B. "50er Packung" = 1 Einheit mit 50 Filtern):
+        - "6 Stück im Thekendisplay" → VE=6 (6 einzelne Artikel im Display)
+        - "50er Packung" → VE=1 (die Packung IST der Artikel)
+        - "20x 25ml" → VE=20 (20 Einzelstücke à 25ml)
+        - "Display 24" → VE=24 (24 Artikel im Display)
         """
         combined_text = f"{name} | {description} | {invoice_desc}"
 
-        # Regel 1: "20x 25ml", "12x 100g" → VE = Multiplikator
+        # ── Regel 1: "20x 25ml", "12x 100g" → VE = Multiplikator ──
+        # Das ist immer eine echte VE (mehrere Einzelstücke)
         m = re.search(r"(\d+)\s*x\s*\d+\s*(?:ml|g|mg|cl|l)\b", combined_text, re.IGNORECASE)
         if m:
             ve = int(m.group(1))
             return ve, m.group(0).strip()
 
-        # Regel 2: "500er", "50er", "250er" Packung/Doypack
-        m = re.search(r"(\d+)er\b", combined_text)
-        if m:
-            ve = int(m.group(1))
-            # Kontextwort suchen
-            context = re.search(r"\d+er\s*(\w+)", combined_text)
-            desc = f"{ve}er {context.group(1)}" if context else f"{ve}er"
-            return ve, desc
-
-        # Regel 3: "Display 24", "Display mit 12", "6 Stück im Thekendisplay"
-        m = re.search(r"Display\s*(?:mit\s*)?(\d+)", combined_text, re.IGNORECASE)
-        if m:
-            ve = int(m.group(1))
-            return ve, f"Display {ve}"
-
+        # ── Regel 2: "N Stück im/pro Thekendisplay/Display" → echte VE ──
         m = re.search(r"(\d+)\s*Stück\s*(?:im|pro)\s*(?:Theken)?[Dd]isplay", combined_text)
         if m:
             ve = int(m.group(1))
             return ve, f"{ve} Stück im Display"
 
-        # Regel 4: "N Beutel/Stück/Filter pro Display/Packung"
-        m = re.search(r"(\d+)\s*(?:Beutel|Stück|Filter|Blatt)\s*pro\s*(?:Display|Packung|Pack)",
+        # ── Regel 3: "Display N", "Display mit N" → echte VE ──
+        m = re.search(r"Display\s*(?:mit\s*)?(\d+)", combined_text, re.IGNORECASE)
+        if m:
+            ve = int(m.group(1))
+            return ve, f"Display {ve}"
+
+        # ── Regel 4: "N Beutel/Stück pro Display" → echte VE ──
+        m = re.search(r"(\d+)\s*(?:Beutel|Stück|Filter|Blatt)\s*pro\s*Display",
                        combined_text, re.IGNORECASE)
         if m:
             ve = int(m.group(1))
             return ve, m.group(0).strip()
 
-        # Regel 5: "50er Box/32Blatt" → Box mit 50 Heftchen à 32 Blatt
+        # ── Regel 5: "Ner Box" (z.B. "50er Box" = Gebinde mit N) ──
+        # Box = Display-artig, echte VE
         m = re.search(r"(\d+)er\s*Box", combined_text, re.IGNORECASE)
         if m:
             ve = int(m.group(1))
             return ve, f"{ve}er Box"
+
+        # ── Regel 6: "Ner Packung/Pack/Doypack/Beutel/Tüte" → KEINE VE ──
+        # Das beschreibt das Produkt selbst (z.B. "50er Packung" = 1 Packung mit 50 Filtern)
+        # Diese Pattern beschreiben den Inhalt des Produkts, nicht die Gebindegröße.
+        _PRODUCT_UNIT_KEYWORDS = (
+            r"Packung|Pack(?:ung)?|Pckg|Doypack|Beutel|Tüte|Bag|"
+            r"Heft|Blättchen|Rolle|Röhrchen|Tube|Dose|Glas"
+        )
+        m = re.search(
+            rf"(\d+)er\s*(?:{_PRODUCT_UNIT_KEYWORDS})",
+            combined_text, re.IGNORECASE,
+        )
+        if m:
+            inhalt = int(m.group(1))
+            context = re.search(rf"\d+er\s*(\w+)", combined_text)
+            desc = f"{inhalt}er {context.group(1)}" if context else f"{inhalt}er"
+            # VE = 1, aber Inhalt als Beschreibung merken
+            return 1, desc
+
+        # ── Regel 7: Einfaches "Ner" ohne Kontext → Vorsicht! ──
+        # Prüfe ob es ein Produkt-Attribut ist (Filter, Slim, etc.) oder eine echte VE
+        m = re.search(r"(\d+)er\b", combined_text)
+        if m:
+            ve_candidate = int(m.group(1))
+            # Kontextwort nach der Zahl prüfen
+            context = re.search(r"\d+er\s*(\w+)", combined_text)
+            context_word = context.group(1).lower() if context else ""
+
+            # Diese Wörter deuten auf Produktbeschreibung hin → VE=1
+            product_descriptors = {
+                "packung", "pack", "pckg", "doypack", "beutel", "tüte", "bag",
+                "heft", "blättchen", "rolle", "röhrchen", "tube", "dose", "glas",
+                "filter", "slim", "aktivkohle", "aktivkohlefilter", "tips",
+                "papers", "longpapers", "rolls", "cones", "blunts",
+            }
+            if context_word in product_descriptors:
+                desc = f"{ve_candidate}er {context.group(1)}" if context else f"{ve_candidate}er"
+                return 1, desc
+
+            # Hohe Zahlen (≥ 20) ohne Display/Box-Kontext sind meist Produktbeschreibungen
+            if ve_candidate >= 20:
+                desc = f"{ve_candidate}er {context.group(1)}" if context else f"{ve_candidate}er"
+                return 1, desc
+
+            # Niedrige Zahlen (< 20) könnten echte VE sein (z.B. "6er" = 6 Stück)
+            desc = f"{ve_candidate}er {context.group(1)}" if context else f"{ve_candidate}er"
+            return ve_candidate, desc
+
+        # ── Regel 8: "einzeln in Kartonschachtel" → VE=1 ──
+        if re.search(r"einzeln\s+in", combined_text, re.IGNORECASE):
+            return 1, "Einzelstück"
 
         # Standard: VE = 1 (Einzelartikel)
         return 1, "Einzelstück"

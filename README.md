@@ -138,6 +138,23 @@ jtl_import_tool/
 - **Aufschlags-Methode**: `VK = EK_Einzelpreis × 2.5 × 1.19` (Markup + MwSt)
 - Es wird der **niedrigere** Wert genommen
 
+### VE-Größen (Verpackungseinheiten):
+
+Das Tool unterscheidet intelligent zwischen **echter VE** (Gebinde mit mehreren Einzelstücken) und **Produktbeschreibung** (z.B. "50er Packung" = 1 Einheit):
+
+| Produkt | Beschreibung | VE | EK (VE) | EK/Stück | Erklärung |
+|---------|-------------|-----|---------|----------|-----------|
+| JAYSAFE Green | "6 Stück im Thekendisplay" | 6 | 22,98€ | **3,83€** | Display mit 6 Einzelstücken → EK ÷ 6 |
+| PURIZE XTRA Slim | "50er Packung" | 1 | 4,47€ | **4,47€** | Packung IST der Artikel → keine Teilung |
+| ScreenUrin | "20x 25ml" | 20 | 130,00€ | **6,50€** | 20 Beutel → EK ÷ 20 |
+| OCB Slim | "50er Heft" | 1 | 0,85€ | **0,85€** | Heft IST der Artikel → keine Teilung |
+
+**Regel-Logik:**
+- `"N Stück im Display"`, `"Display N"`, `"Nx Yml"` → **echte VE** (EK wird geteilt)
+- `"Ner Packung/Pack/Beutel/Heft"` → **Produktbeschreibung** (VE=1, keine Teilung)
+- `"Ner"` mit Zahl ≥ 20 ohne Display-Kontext → **Produktbeschreibung** (VE=1)
+- `"Ner"` mit Zahl < 20 → **vermutlich echte VE** (z.B. "6er" = 6 Stück)
+
 ## Artikel-Matching (Fuzzy)
 
 Das Tool verwendet intelligentes Matching um Artikel in JTL Wawi zu finden:
