@@ -455,6 +455,17 @@ class KnistermannScraper:
         if re.search(r"einzeln\s+in", combined_text, re.IGNORECASE):
             return 1, "Einzelstück"
 
+        # ── Regel 9: Mengeneinheit "Display" ohne Anzahl → Display erkannt ──
+        # Wenn die Mengeneinheit "Display" enthält aber keine Zahl gefunden wurde,
+        # markiere es als Display mit unbekannter Größe (ve_menge bleibt 1,
+        # muss durch Knistermann-Scraping aufgelöst werden).
+        if re.search(r"Mengeneinheit:\s*Display", combined_text, re.IGNORECASE):
+            logger.warning(
+                "Mengeneinheit 'Display' erkannt, aber VE-Größe nicht bestimmbar. "
+                "Knistermann-Scraping benötigt für genaue VE-Bestimmung."
+            )
+            return 1, "Display (VE unbekannt)"
+
         # Standard: VE = 1 (Einzelartikel)
         return 1, "Einzelstück"
 

@@ -14,7 +14,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import config
 
@@ -97,6 +97,29 @@ def remove_colors(text: str) -> str:
     # Führende/trailing Kommas, Bindestriche etc. entfernen
     cleaned = re.sub(r"^[,\-/\s]+|[,\-/\s]+$", "", cleaned).strip()
     return cleaned
+
+
+# ── Packungsgröße-Extraktion ───────────────────────────────────────
+def extract_pack_size(text: str) -> Optional[int]:
+    """
+    Extrahiert die Packungsgröße aus einem Artikelnamen.
+
+    Erkennt Muster wie "50er", "100er", "25er Packung", "250er".
+
+    Args:
+        text: Artikelname oder Beschreibung
+
+    Returns:
+        Packungsgröße als Integer, oder None wenn keine erkannt.
+    """
+    if not text:
+        return None
+
+    # Muster: "50er", "100er Packung", "250er Pack" etc.
+    m = re.search(r"\b(\d+)er\b", text)
+    if m:
+        return int(m.group(1))
+    return None
 
 
 # ── Artikelname-Normalisierung ────────────────────────────────────
@@ -300,18 +323,52 @@ class ArticleMatcher:
                 message=f"Artikelname zu kurz nach Normalisierung: '{artikelname}'",
             )
 
-        best_match = None
+        # Packungsgröße des neuen Artikels extrahieren
+        new_pack_size = extract_pack_size(artikelname)
+
+        # Sammle ALLE Kandidaten oberhalb eines Mindest-Schwellenwerts
+        # (nicht nur den besten), um pack-size-aware Auswahl zu ermöglichen
+        all_candidates: List[Tuple[float, str, list]] = []  # (score, norm_name, items)
         best_score = 0.0
-        best_items = []
 
         for norm_existing, items in self._name_index.items():
             score = calculate_similarity(norm_new, norm_existing)
             if score > best_score:
                 best_score = score
-                best_match = norm_existing
-                best_items = items
+            if score >= threshold:
+                all_candidates.append((score, norm_existing, items))
 
-        if best_score >= threshold and best_items:
+        if all_candidates:
+            # Sortiere: höchster Score zuerst
+            all_candidates.sort(key=lambda x: x[0], reverse=True)
+            best_score = all_candidates[0][0]
+
+            # Sammle alle Items aus allen Kandidaten-Gruppen mit Score nahe dem besten
+            # (innerhalb von 15 Punkten), um Packungsgrößen vergleichen zu können
+            score_cutoff = best_score - 15.0
+            best_items = []
+            for score, norm_name, items in all_candidates:
+                if score >= score_cutoff:
+                    best_items.extend(items)
+                else:
+                    break
+
+            # ── Packungsgrößen-Matching: bevorzuge gleiche Größe ──
+            if new_pack_size is not None and len(best_items) > 1:
+                def _pack_size_priority(item):
+                    item_pack = extract_pack_size(item.name)
+                    if item_pack == new_pack_size:
+                        return 0  # Beste Priorität: gleiche Größe
+                    elif item_pack is None:
+                        return 1  # Mittel: keine Größe erkannt
+                    else:
+                        return 2  # Niedrig: andere Größe
+                best_items = sorted(best_items, key=_pack_size_priority)
+                logger.debug(
+                    f"  Packungsgrößen-Matching: Neu={new_pack_size}er, "
+                    f"Sortiert: {[(i.name, extract_pack_size(i.name)) for i in best_items[:3]]}"
+                )
+
             # Prüfe ob es eine Farbvariante ist
             existing_colors = []
             for item in best_items:
@@ -323,13 +380,22 @@ class ArticleMatcher:
 
             if new_color and new_color.lower() in [c.lower() for c in existing_colors]:
                 # Gleiche Farbe existiert bereits → Update
-                # Finde den Artikel mit der gleichen Farbe
+                # Finde den Artikel mit der gleichen Farbe UND passender Packungsgröße
                 matched = best_items[0]
+                candidates_same_color = []
                 for item in best_items:
                     item_colors = [c.lower() for c in extract_colors(item.name)]
                     if new_color.lower() in item_colors:
-                        matched = item
-                        break
+                        candidates_same_color.append(item)
+
+                if candidates_same_color:
+                    # Bei mehreren gleichen Farben: bevorzuge gleiche Packungsgröße
+                    matched = candidates_same_color[0]
+                    if new_pack_size is not None and len(candidates_same_color) > 1:
+                        for cand in candidates_same_color:
+                            if extract_pack_size(cand.name) == new_pack_size:
+                                matched = cand
+                                break
 
                 return MatchResult(
                     match_type="exact",
@@ -343,11 +409,13 @@ class ArticleMatcher:
 
             elif new_color and existing_colors:
                 # Andere Farbe → Farbvariante
+                # Bevorzuge Variante mit gleicher Packungsgröße als Referenz
+                ref_item = best_items[0]  # Bereits nach Packungsgröße sortiert
                 return MatchResult(
                     match_type="color_variant",
                     confidence=best_score,
-                    matched_item=best_items[0],
-                    matched_name=best_items[0].name,
+                    matched_item=ref_item,
+                    matched_name=ref_item.name,
                     color_detected=new_color,
                     existing_colors=existing_colors,
                     message=(

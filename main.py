@@ -305,10 +305,14 @@ def process_invoice(
         kn = knistermann_data.get(artnr, ProductInfo(artikelnummer=artnr))
         ve_menge = kn.ve_menge if kn.gefunden and kn.ve_menge > 1 else 1
 
-        # Fallback: VE aus Rechnungsbeschreibung parsen
+        # Fallback: VE aus Rechnungsbeschreibung + Mengeneinheit parsen
         if ve_menge == 1:
+            # Mengeneinheit (z.B. "Display") in den kombinierten Text einbeziehen
+            fallback_desc = item.beschreibung
+            if item.mengeneinheit:
+                fallback_desc = f"{item.beschreibung} | Mengeneinheit: {item.mengeneinheit}"
             ve_menge, ve_desc = KnistermannScraper._extract_ve_info(
-                item.beschreibung, "", item.beschreibung
+                fallback_desc, kn.beschreibung_text if kn else "", item.beschreibung
             )
             if ve_menge > 1 and not kn.ve_beschreibung:
                 kn.ve_beschreibung = ve_desc
