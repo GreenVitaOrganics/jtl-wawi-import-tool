@@ -62,25 +62,20 @@ class KnistermannScraper:
         logger.info("Knistermann Login wird durchgeführt...")
 
         try:
-            # 1. Login-Seite aufrufen → CSRF-Token holen
+            # 1. Account-Seite aufrufen um Session und CSRF-Token zu holen
             resp = self.session.get(
-                config.KNISTERMANN_LOGIN_URL,
+                f"{config.KNISTERMANN_BASE_URL}/account",
                 timeout=config.REQUEST_TIMEOUT,
             )
             resp.raise_for_status()
 
-            soup = BeautifulSoup(resp.text, "html.parser")
-            csrf_input = soup.find("input", {"name": "__csrf_token"})
-            csrf_token = csrf_input["value"] if csrf_input else ""
-
+            # 2. CSRF-Token aus Cookie holen (Shopware 5)
+            csrf_token = self.session.cookies.get('__csrf_token-1', '')
             if not csrf_token:
-                # Versuche alternativen Selektor
-                meta_csrf = soup.find("meta", {"name": "csrf-token"})
-                csrf_token = meta_csrf["content"] if meta_csrf else ""
+                logger.warning("Kein CSRF-Token im Cookie gefunden")
 
-            logger.debug(f"CSRF-Token: {csrf_token[:20]}..." if csrf_token else "Kein CSRF-Token gefunden")
-
-            # 2. Login-POST
+            # 3. Login-POST mit CSRF-Token
+            login_url = f"{config.KNISTERMANN_BASE_URL}/PrivateLogin/login/sTarget/PrivateLogin/sTargetAction/redirectLogin"
             login_data = {
                 "email": config.KNISTERMANN_EMAIL,
                 "password": config.KNISTERMANN_PASSWORD,
@@ -88,14 +83,14 @@ class KnistermannScraper:
             }
 
             resp = self.session.post(
-                config.KNISTERMANN_LOGIN_URL,
+                login_url,
                 data=login_data,
                 timeout=config.REQUEST_TIMEOUT,
                 allow_redirects=True,
             )
             resp.raise_for_status()
 
-            # 3. Prüfe ob Login erfolgreich war
+            # 4. Prüfe ob Login erfolgreich war
             if "account/logout" in resp.text.lower() or "mein konto" in resp.text.lower():
                 self._logged_in = True
                 logger.info("✅ Knistermann Login erfolgreich")
