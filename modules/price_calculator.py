@@ -12,12 +12,25 @@ Preis-Strategie bei JTL API Integration:
 """
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Optional
 
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def round_to_dime(price: float) -> float:
+    """Rundet VK-Preis auf 10 Cent (0,10€) auf.
+    
+    Beispiele:
+        2.96 → 3.00
+        5.62 → 5.70
+        23.65 → 23.70
+        9.50 → 9.50 (bleibt)
+    """
+    return math.ceil(price * 10) / 10
 
 
 @dataclass
@@ -65,19 +78,19 @@ def get_price_strategy(
         existing_vk = getattr(matched_item, "vk_brutto", 0.0) or 0.0
 
         if existing_vk > 0:
-            # VK aus der Wawi übernehmen (bestehender Artikel)
-            vk_brutto = existing_vk
-            methode = f"VK aus Wawi übernommen: {existing_vk:.2f}€ (Artikel existiert)"
+            # VK aus der Wawi übernehmen (bestehender Artikel) – Floating-Point bereinigen
+            vk_brutto = round(existing_vk, 2)
+            methode = f"VK aus Wawi übernommen: {vk_brutto:.2f}€ (Artikel existiert)"
             vk_overridden = True
         else:
-            # Kein VK in Wawi → Formel verwenden
+            # Kein VK in Wawi → Formel verwenden + auf 10 Cent runden
             prices = calculate_prices(
                 ek_ve_preis=ek_ve_preis,
                 ve_menge=ve_menge,
                 blackleaf_preis=blackleaf_preis,
             )
-            vk_brutto = prices.vk_brutto
-            methode = prices.vk_methode + " (Wawi-VK fehlt)"
+            vk_brutto = round_to_dime(prices.vk_brutto)
+            methode = prices.vk_methode + " (Wawi-VK fehlt, gerundet auf 10ct)"
             vk_overridden = False
 
         # Marge berechnen
@@ -107,22 +120,22 @@ def get_price_strategy(
         existing_vk = getattr(matched_item, "vk_brutto", 0.0) or 0.0
 
         if existing_vk > 0:
-            # VK von der bestehenden Variante übernehmen
-            vk_brutto = existing_vk
+            # VK von der bestehenden Variante übernehmen – auf 10ct runden + FP bereinigen
+            vk_brutto = round_to_dime(round(existing_vk, 2))
             methode = (
                 f"VK übernommen von Variante '{getattr(matched_item, 'name', '?')}': "
-                f"{existing_vk:.2f}€"
+                f"{vk_brutto:.2f}€ (auf 10ct gerundet)"
             )
             vk_overridden = True
         else:
-            # Kein VK vorhanden → Formel verwenden
+            # Kein VK vorhanden → Formel verwenden + auf 10ct runden
             prices = calculate_prices(
                 ek_ve_preis=ek_ve_preis,
                 ve_menge=ve_menge,
                 blackleaf_preis=blackleaf_preis,
             )
-            vk_brutto = prices.vk_brutto
-            methode = prices.vk_methode + " (Variante ohne VK)"
+            vk_brutto = round_to_dime(prices.vk_brutto)
+            methode = prices.vk_methode + " (Variante ohne VK, gerundet auf 10ct)"
             vk_overridden = False
 
         # Marge berechnen
@@ -152,9 +165,15 @@ def get_price_strategy(
         ve_menge=ve_menge,
         blackleaf_preis=blackleaf_preis,
     )
+    # VK auf 10 Cent runden
+    prices.vk_brutto = round_to_dime(prices.vk_brutto)
     prices.strategy = "new"
+    # Marge neu berechnen mit gerundetem VK
+    vk_netto = prices.vk_brutto / config.MWST_RATE
+    if prices.ek_einzelpreis > 0:
+        prices.marge_prozent = round(((vk_netto - prices.ek_einzelpreis) / prices.ek_einzelpreis) * 100, 1)
     logger.info(
-        f"  Strategie NEU: EK={prices.ek_einzelpreis:.2f}€, VK={prices.vk_brutto:.2f}€"
+        f"  Strategie NEU: EK={prices.ek_einzelpreis:.2f}€, VK={prices.vk_brutto:.2f}€ (auf 10ct gerundet)"
     )
     return prices
 
