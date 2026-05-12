@@ -3,6 +3,31 @@ Konfigurationsdatei für das JTL Import Tool.
 Enthält Login-Daten, URLs und Einstellungen.
 """
 
+# ── JTL Wawi REST API ────────────────────────────────────────────
+JTL_API_URL = "https://194.163.144.151:443"
+JTL_API_KEY = "FCC3C8D9-1872-4DBA-8053-5EBF323FFAEA"
+JTL_API_TIMEOUT = 30
+JTL_VERIFY_SSL = False            # Bei Self-Signed Certificates
+JTL_API_MAX_RETRIES = 3
+JTL_API_RETRY_DELAY = 2          # Sekunden zwischen Retry-Versuchen
+
+# ── Artikel-Matching ──────────────────────────────────────────────
+FUZZY_MATCH_THRESHOLD = 85        # Prozent Ähnlichkeit für Fuzzy-Matching
+COLOR_KEYWORDS_DE = [
+    "grün", "schwarz", "rot", "blau", "weiß", "gelb",
+    "orange", "lila", "violett", "rosa", "pink", "braun",
+    "grau", "silber", "gold", "türkis", "beige", "bordeaux",
+    "neon", "multicolor", "bunt", "transparent", "klar",
+]
+COLOR_KEYWORDS_EN = [
+    "green", "black", "red", "blue", "white", "yellow",
+    "orange", "purple", "violet", "pink", "brown",
+    "grey", "gray", "silver", "gold", "turquoise", "beige",
+    "neon", "multicolor", "colorful", "transparent", "clear",
+    "lemon", "tropical", "dream",
+]
+COLOR_KEYWORDS = COLOR_KEYWORDS_DE + COLOR_KEYWORDS_EN
+
 # ── Knistermann Shop ──────────────────────────────────────────────
 KNISTERMANN_BASE_URL = "https://shop.knistermann.de"
 KNISTERMANN_LOGIN_URL = f"{KNISTERMANN_BASE_URL}/PrivateLogin/index/requireReload"

@@ -4,6 +4,11 @@ Preiskalkulation für JTL Import.
 Berechnet:
 1. EK-Einzelpreis = VE_Preis / VE_Menge
 2. VK-Preis = MIN(Blackleaf_Preis × 0.9, EK_Einzelpreis × 2.5 × 1.19)
+
+Preis-Strategie bei JTL API Integration:
+- Fall 1: Artikel existiert bereits (gleiche Farbe) → EK + VK updaten nach Formel
+- Fall 2: Farbvariante existiert → EK neu, VK von bestehender Variante übernehmen
+- Fall 3: Komplett neuer Artikel → EK + VK nach Formel berechnen
 """
 
 import logging
@@ -25,6 +30,106 @@ class PriceResult:
     blackleaf_preis: Optional[float] = None  # Blackleaf-VK (brutto)
     vk_methode: str = ""            # Wie wurde der VK berechnet?
     marge_prozent: float = 0.0      # Marge in Prozent
+    strategy: str = ""              # Preis-Strategie: "update", "color_variant", "new"
+    vk_overridden: bool = False     # VK wurde von bestehender Variante übernommen
+
+
+def get_price_strategy(
+    ek_ve_preis: float,
+    ve_menge: int,
+    match_type: str,
+    matched_item: object = None,
+    blackleaf_preis: Optional[float] = None,
+) -> PriceResult:
+    """
+    Bestimmt die Preis-Strategie basierend auf dem Artikel-Matching.
+
+    Args:
+        ek_ve_preis:     EK netto aus der Rechnung (VE-Preis)
+        ve_menge:        Stückzahl in der VE
+        match_type:      Art des Matchings: "exact", "fuzzy", "color_variant", "none"
+        matched_item:    Gefundener JTL-Artikel (JTLItem) oder None
+        blackleaf_preis: VK brutto von Blackleaf.de
+
+    Returns:
+        PriceResult mit Preis-Strategie.
+    """
+    # EK-Einzelpreis berechnen
+    if ve_menge <= 0:
+        ve_menge = 1
+    ek_einzelpreis = round(ek_ve_preis / ve_menge, 4)
+
+    # ── Fall 1: Artikel existiert bereits (exakt oder fuzzy) ──────
+    if match_type in ("exact", "fuzzy") and matched_item is not None:
+        # EK + VK nach Formel updaten
+        prices = calculate_prices(
+            ek_ve_preis=ek_ve_preis,
+            ve_menge=ve_menge,
+            blackleaf_preis=blackleaf_preis,
+        )
+        prices.strategy = "update"
+        logger.info(
+            f"  Strategie UPDATE: Artikel existiert → "
+            f"EK={prices.ek_einzelpreis:.2f}€, VK={prices.vk_brutto:.2f}€"
+        )
+        return prices
+
+    # ── Fall 2: Farbvariante existiert ────────────────────────────
+    if match_type == "color_variant" and matched_item is not None:
+        # EK neu berechnen, VK von bestehender Variante übernehmen
+        existing_vk = getattr(matched_item, "vk_brutto", 0.0) or 0.0
+
+        if existing_vk > 0:
+            # VK von der bestehenden Variante übernehmen
+            vk_brutto = existing_vk
+            methode = (
+                f"VK übernommen von Variante '{getattr(matched_item, 'name', '?')}': "
+                f"{existing_vk:.2f}€"
+            )
+            vk_overridden = True
+        else:
+            # Kein VK vorhanden → Formel verwenden
+            prices = calculate_prices(
+                ek_ve_preis=ek_ve_preis,
+                ve_menge=ve_menge,
+                blackleaf_preis=blackleaf_preis,
+            )
+            vk_brutto = prices.vk_brutto
+            methode = prices.vk_methode + " (Variante ohne VK)"
+            vk_overridden = False
+
+        # Marge berechnen
+        vk_netto = vk_brutto / config.MWST_RATE
+        marge = round(((vk_netto - ek_einzelpreis) / ek_einzelpreis) * 100, 1) if ek_einzelpreis > 0 else 0.0
+
+        result = PriceResult(
+            ek_ve_preis=ek_ve_preis,
+            ve_menge=ve_menge,
+            ek_einzelpreis=round(ek_einzelpreis, 2),
+            vk_brutto=vk_brutto,
+            blackleaf_preis=blackleaf_preis,
+            vk_methode=methode,
+            marge_prozent=marge,
+            strategy="color_variant",
+            vk_overridden=vk_overridden,
+        )
+        logger.info(
+            f"  Strategie FARBVARIANTE: EK={result.ek_einzelpreis:.2f}€, "
+            f"VK={'übernommen' if vk_overridden else 'berechnet'}={result.vk_brutto:.2f}€"
+        )
+        return result
+
+    # ── Fall 3: Komplett neuer Artikel ────────────────────────────
+    prices = calculate_prices(
+        ek_ve_preis=ek_ve_preis,
+        ve_menge=ve_menge,
+        blackleaf_preis=blackleaf_preis,
+    )
+    prices.strategy = "new"
+    logger.info(
+        f"  Strategie NEU: EK={prices.ek_einzelpreis:.2f}€, VK={prices.vk_brutto:.2f}€"
+    )
+    return prices
 
 
 def calculate_prices(

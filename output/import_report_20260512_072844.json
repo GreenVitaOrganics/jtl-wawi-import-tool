@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-05-12T07:28:44.258012",
+  "mode": "csv",
+  "dry_run": false,
+  "pdf_path": "/home/ubuntu/Uploads/Proformarechnung 2026142117.pdf",
+  "invoice_number": "2026142117",
+  "invoice_date": "08.05.2026",
+  "api_connected": false,
+  "api_url": "",
+  "summary": {
+    "total_positions": 20,
+    "skipped_positions": 1,
+    "articles_processed": 0,
+    "articles_created": 0,
+    "articles_updated": 0,
+    "articles_color_variant": 0,
+    "articles_failed": 0
+  },
+  "details": {
+    "created": [],
+    "updated": [],
+    "color_variants": [],
+    "failed": []
+  },
+  "errors": [],
+  "warnings": []
+}
