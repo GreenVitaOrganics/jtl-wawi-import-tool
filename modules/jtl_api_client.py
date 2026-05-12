@@ -454,58 +454,99 @@ class JTLApiClient:
         """
         Erstellt einen neuen Artikel in JTL Wawi.
 
-        Args:
-            article_data: Artikel-Daten als Dictionary. Mindestens:
-                - Sku / ArticleNumber: Artikelnummer
-                - Name: Artikelname
-                - PurchasePrice: EK netto
-                - SalesPrice: VK brutto
-                - TaxRate: MwSt-Satz
+        HINWEIS: JTL Wawi REST API v1 unterstützt kein POST /items.
+        Neue Artikel werden in die CSV für JTL-Ameise geschrieben.
+        Diese Methode loggt eine Warnung und gibt None zurück.
 
         Returns:
-            Der erstellte JTLItem oder None bei Fehler.
+            Immer None (Artikel wird per CSV erstellt).
         """
-        logger.info(f"Erstelle Artikel: {article_data.get('Sku', article_data.get('ArticleNumber', '?'))}")
-
-        result = self._request("POST", "items", data=article_data)
-        if result:
-            logger.info(f"✅ Artikel erstellt: {article_data.get('Sku', '?')}")
-            return self._parse_item(result)
-
-        logger.error(f"❌ Artikel konnte nicht erstellt werden: {article_data.get('Sku', '?')}")
+        sku = article_data.get('Sku', article_data.get('ArticleNumber', '?'))
+        logger.warning(
+            f"⚠️  Artikel '{sku}' kann nicht per API erstellt werden "
+            f"(JTL REST API v1 unterstützt kein POST). → CSV-Import nötig."
+        )
         return None
 
-    # ── Artikel aktualisieren ─────────────────────────────────────
+    # ── Artikel-Preise aktualisieren (über /items/{id}/prices) ─────
     def update_article(self, item_id: int, update_data: Dict) -> bool:
         """
-        Aktualisiert einen bestehenden Artikel in JTL Wawi.
+        Aktualisiert die Verkaufspreise eines bestehenden Artikels.
+
+        Nutzt den PUT /items/{id}/prices Endpoint, da PUT /items/{id}
+        in JTL Wawi REST API v1 einen Serialisierungsfehler hat und
+        POST/PATCH nicht unterstützt werden.
+
+        HINWEIS: Nur VK-Preise können über die API geändert werden.
+        EK-Preise werden in die CSV für JTL-Ameise geschrieben.
 
         Args:
             item_id:     JTL-interne Artikel-ID
-            update_data: Zu aktualisierende Felder als Dictionary
+            update_data: Dictionary mit mindestens 'SalesPrice' oder 'GrossPrice'
 
         Returns:
             True bei Erfolg, False bei Fehler.
         """
-        logger.info(f"Aktualisiere Artikel ID={item_id}")
+        logger.info(f"Aktualisiere Preise für Artikel ID={item_id}")
 
-        # Versuche PATCH (Teilaktualisierung)
+        # Erst aktuelle Preise lesen
         try:
-            result = self._request("PATCH", f"items/{item_id}", data=update_data)
+            current_prices = self._request("GET", f"items/{item_id}/prices")
+            if current_prices is None:
+                logger.warning(f"Keine Preise für Artikel {item_id} gefunden")
+                current_prices = []
+        except JTLApiError:
+            current_prices = []
+
+        # Neuen VK-Preis aus update_data extrahieren
+        new_vk_netto = update_data.get("SalesPrice")
+        new_vk_brutto = update_data.get("GrossPrice")
+
+        if new_vk_netto is None and new_vk_brutto is not None:
+            new_vk_netto = round(new_vk_brutto / 1.19, 7)
+        elif new_vk_netto is not None and new_vk_brutto is None:
+            new_vk_brutto = round(new_vk_netto * 1.19, 2)
+
+        if new_vk_netto is None:
+            logger.warning(f"Kein VK-Preis in update_data für Artikel {item_id}")
+            return False
+
+        # Preis-Array bauen: bestehende Preise aktualisieren oder neuen anlegen
+        price_array = []
+        vk_updated = False
+
+        for price in current_prices:
+            if price.get("SalesPlattform") is None and price.get("GrossNetTyp") == "net":
+                # Standard VK (netto) → aktualisieren
+                price["Value"] = round(new_vk_netto, 7)
+                vk_updated = True
+            price_array.append(price)
+
+        if not vk_updated:
+            # Kein VK-Eintrag vorhanden → neuen anlegen
+            price_array.append({
+                "Value": round(new_vk_netto, 7),
+                "SalesPlattform": None,
+                "Assignment": None,
+                "GrossNetTyp": "net",
+                "Currency": "EUR",
+                "TaxRateDefault": 19.0,
+                "TaxRateKey": 1,
+                "FromQuantity": 0,
+                "Percent": 0.0,
+            })
+
+        # PUT /items/{id}/prices
+        try:
+            result = self._request("PUT", f"items/{item_id}/prices", data=price_array)
             if result is not None:
-                logger.info(f"✅ Artikel {item_id} aktualisiert (PATCH)")
+                logger.info(
+                    f"✅ Artikel {item_id} VK aktualisiert: "
+                    f"netto={new_vk_netto:.4f}€, brutto={new_vk_brutto:.2f}€"
+                )
                 return True
         except JTLApiError as e:
-            logger.debug(f"PATCH fehlgeschlagen, versuche PUT: {e}")
-
-        # Fallback: PUT (Vollaktualisierung)
-        try:
-            result = self._request("PUT", f"items/{item_id}", data=update_data)
-            if result is not None:
-                logger.info(f"✅ Artikel {item_id} aktualisiert (PUT)")
-                return True
-        except JTLApiError as e:
-            logger.error(f"❌ Artikel {item_id} konnte nicht aktualisiert werden: {e}")
+            logger.error(f"❌ Preise für Artikel {item_id} konnten nicht aktualisiert werden: {e}")
 
         return False
 

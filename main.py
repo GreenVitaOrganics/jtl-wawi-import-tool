@@ -487,41 +487,39 @@ def _sync_to_jtl_api(
     )
 
     if prices.strategy == "update" and match_result and match_result.matched_item:
-        # Bestehenden Artikel aktualisieren
+        # Bestehenden Artikel: VK bleibt gleich (aus Wawi), nur EK in CSV
+        # VK wird NICHT über API geschrieben, da er aus der Wawi übernommen wird
         item_id = match_result.matched_item.item_id
-        success = client.update_article(item_id, payload)
-        if success:
-            logger.info(f"  ✅ {artnr} aktualisiert (ID={item_id})")
-            report.add_updated(
-                artnr, name, prices.ek_einzelpreis, prices.vk_brutto,
-                match_result.matched_name, match_result.confidence,
-            )
-        else:
-            report.add_failed(artnr, name, "Update fehlgeschlagen")
+        logger.info(
+            f"  ✅ {artnr} erkannt (ID={item_id}) – VK={prices.vk_brutto:.2f}€ "
+            f"(aus Wawi), EK={prices.ek_einzelpreis:.2f}€ → CSV"
+        )
+        report.add_updated(
+            artnr, name, prices.ek_einzelpreis, prices.vk_brutto,
+            match_result.matched_name, match_result.confidence,
+        )
 
     elif prices.strategy == "color_variant":
-        # Neue Farbvariante anlegen
-        created = client.create_article(payload)
-        if created:
-            logger.info(f"  ✅ {artnr} als Farbvariante angelegt")
-            color = match_result.color_detected if match_result else ""
-            matched_name = match_result.matched_name if match_result else ""
-            report.add_color_variant(
-                artnr, name, prices.ek_einzelpreis, prices.vk_brutto,
-                color, matched_name, prices.vk_overridden,
-            )
-        else:
-            report.add_failed(artnr, name, "Farbvariante konnte nicht angelegt werden")
+        # Neue Farbvariante: kann nicht per API erstellt werden → CSV
+        color = match_result.color_detected if match_result else ""
+        matched_name = match_result.matched_name if match_result else ""
+        logger.info(
+            f"  🎨 {artnr} Farbvariante '{color}' – VK={prices.vk_brutto:.2f}€ "
+            f"(von {matched_name}) → CSV"
+        )
+        report.add_color_variant(
+            artnr, name, prices.ek_einzelpreis, prices.vk_brutto,
+            color, matched_name, prices.vk_overridden,
+        )
 
     else:
-        # Neuen Artikel anlegen
-        created = client.create_article(payload)
-        if created:
-            logger.info(f"  ✅ {artnr} neu angelegt")
-            report.add_created(artnr, name, prices.ek_einzelpreis,
-                               prices.vk_brutto, prices.strategy)
-        else:
-            report.add_failed(artnr, name, "Artikel konnte nicht angelegt werden")
+        # Neuen Artikel: kann nicht per API erstellt werden → CSV
+        logger.info(
+            f"  ✨ {artnr} NEU – EK={prices.ek_einzelpreis:.2f}€, "
+            f"VK={prices.vk_brutto:.2f}€ → CSV"
+        )
+        report.add_created(artnr, name, prices.ek_einzelpreis,
+                           prices.vk_brutto, prices.strategy)
 
 
 def _print_api_summary(report: ImportReport, mode: str, dry_run: bool):
