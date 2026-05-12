@@ -23,7 +23,7 @@ PDF-Rechnung → PDF-Parser → Knistermann-Scraping → Blackleaf-Preischeck
    - Fuzzy-Matching über Artikelnamen (ohne Farben)
    - Farbvarianten-Erkennung
 5. **Preisstrategie** (NEU) – Bestimmt Preise basierend auf dem Matching:
-   - **Artikel existiert** → EK + VK nach Formel updaten
+   - **Artikel existiert** → EK updaten, **VK aus Wawi übernehmen** (nicht ändern!)
    - **Farbvariante existiert** → EK neu, VK von bestehender Variante übernehmen
    - **Neuer Artikel** → EK + VK nach Formel berechnen
 6. **JTL API Sync** (NEU) – Artikel direkt in JTL Wawi anlegen/aktualisieren
@@ -129,8 +129,8 @@ jtl_import_tool/
 
 | Situation | EK | VK | Beispiel |
 |-----------|----|----|----------|
-| Artikel existiert bereits (gleiche Farbe) | Nach Formel updaten | Nach Formel updaten | "Sanaleo VaPen Lemon" existiert → Update |
-| Andere Farbvariante existiert | EK neu berechnen | VK von bestehender Variante übernehmen | "VaPen Blue Dream" existiert, "VaPen Lemon" ist neu |
+| **Artikel existiert bereits** (gleiche Farbe) | ✅ Updaten | ✅ **Aus Wawi übernehmen** (nicht ändern!) | "Sanaleo VaPen Lemon" existiert → Nur EK aktualisieren |
+| **Farbvariante existiert** | ✅ Neu berechnen | ✅ Von bestehender Variante übernehmen | "VaPen Blue" existiert, "VaPen Lemon" ist neu → VK von Blue |
 | Komplett neuer Artikel | Nach Formel | Nach Formel (Blackleaf -10% oder EK×2.5×1.19) | Völlig neues Produkt |
 
 ### VK-Formeln:

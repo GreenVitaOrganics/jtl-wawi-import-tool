@@ -61,18 +61,45 @@ def get_price_strategy(
 
     # ── Fall 1: Artikel existiert bereits (exakt oder fuzzy) ──────
     if match_type in ("exact", "fuzzy") and matched_item is not None:
-        # EK + VK nach Formel updaten
-        prices = calculate_prices(
+        # EK neu berechnen, VK aus Wawi übernehmen (nicht ändern!)
+        existing_vk = getattr(matched_item, "vk_brutto", 0.0) or 0.0
+
+        if existing_vk > 0:
+            # VK aus der Wawi übernehmen (bestehender Artikel)
+            vk_brutto = existing_vk
+            methode = f"VK aus Wawi übernommen: {existing_vk:.2f}€ (Artikel existiert)"
+            vk_overridden = True
+        else:
+            # Kein VK in Wawi → Formel verwenden
+            prices = calculate_prices(
+                ek_ve_preis=ek_ve_preis,
+                ve_menge=ve_menge,
+                blackleaf_preis=blackleaf_preis,
+            )
+            vk_brutto = prices.vk_brutto
+            methode = prices.vk_methode + " (Wawi-VK fehlt)"
+            vk_overridden = False
+
+        # Marge berechnen
+        vk_netto = vk_brutto / config.MWST_RATE
+        marge = round(((vk_netto - ek_einzelpreis) / ek_einzelpreis) * 100, 1) if ek_einzelpreis > 0 else 0.0
+
+        result = PriceResult(
             ek_ve_preis=ek_ve_preis,
             ve_menge=ve_menge,
+            ek_einzelpreis=round(ek_einzelpreis, 2),
+            vk_brutto=vk_brutto,
             blackleaf_preis=blackleaf_preis,
+            vk_methode=methode,
+            marge_prozent=marge,
+            strategy="update",
+            vk_overridden=vk_overridden,
         )
-        prices.strategy = "update"
         logger.info(
-            f"  Strategie UPDATE: Artikel existiert → "
-            f"EK={prices.ek_einzelpreis:.2f}€, VK={prices.vk_brutto:.2f}€"
+            f"  Strategie UPDATE: EK={result.ek_einzelpreis:.2f}€, "
+            f"VK={'aus Wawi' if vk_overridden else 'berechnet'}={result.vk_brutto:.2f}€"
         )
-        return prices
+        return result
 
     # ── Fall 2: Farbvariante existiert ────────────────────────────
     if match_type == "color_variant" and matched_item is not None:
